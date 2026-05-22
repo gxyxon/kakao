@@ -47,4 +47,213 @@
         .overlay-content .title { display: block; font-weight: bold; font-size: 15px; margin-bottom: 8px; color: #d32f2f; }
         .overlay-content .info { font-size: 13px; color: #555; line-height: 1.6; }
         .overlay-content a {
-            display: block;
+            display: block; text-decoration: none; color: #fff; background: #ff5252;
+            text-align: center; padding: 8px; border-radius: 4px; margin-top: 10px; font-weight: bold;
+        }
+        .close-btn { position: absolute; top: 8px; right: 8px; cursor: pointer; font-weight: bold; color: #aaa; }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <aside id="sidebar">
+        <div class="tab-menu">
+            <button class="tab-btn" onclick="changeCategory('CE7', this)">카페</button>
+            <button class="tab-btn" onclick="changeCategory('CT1', this, '영화관')">영화관</button>
+            <button class="tab-btn" onclick="changeCategory('CT1', this, '문화시설')">문화시설</button>
+        </div>
+
+        <div class="region-selector">
+            <select id="city-select" onchange="changeRegion()">
+                <option value="">지역 선택 (경기도)</option>
+                <option value="수원시">수원시</option>
+                <option value="용인시">용인시</option>
+                <option value="고양시">고양시</option>
+                <option value="성남시">성남시</option>
+                <option value="화성시">화성시</option>
+                <option value="부천시">부천시</option>
+                <option value="남양주시">남양주시</option>
+                <option value="안산시">안산시</option>
+                <option value="평택시">평택시</option>
+                <option value="안양시">안양시</option>
+            </select>
+        </div>
+
+        <ul id="results-list"></ul>
+    </aside>
+    <div id="map"></div>
+</div>
+
+<script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=778e014ba7e921c24f8abd37480e3c4f&libraries=services&autoload=false"></script>
+
+<script>
+    let map, ps;
+    let markers = [];
+    let overlays = [];
+    let currentCategoryCode = '';
+    let currentKeyword = '';
+    let userLocation = null;
+
+    // 아이콘 이미지 설정 (도서관 아이콘 삭제)
+    const icons = {
+        CE7: 'https://cdn-icons-png.flaticon.com/64/2682/2682413.png', // 케이크 (카페)
+        MOVIE: 'https://cdn-icons-png.flaticon.com/64/2503/2503508.png', // 팝콘 (영화관)
+        CULTURE: 'https://cdn-icons-png.flaticon.com/64/2589/2589175.png', // 하얀 하트 (문화시설)
+        USER: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png' // 내 위치
+    };
+
+    kakao.maps.load(function() {
+        const container = document.getElementById('map');
+        const options = {
+            center: new kakao.maps.LatLng(37.2635, 127.0286),
+            level: 5
+        };
+        map = new kakao.maps.Map(container, options);
+        ps = new kakao.maps.services.Places();
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(pos) {
+                userLocation = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+                new kakao.maps.Marker({
+                    map: map,
+                    position: userLocation,
+                    image: new kakao.maps.MarkerImage(icons.USER, new kakao.maps.Size(24, 35))
+                });
+                map.setCenter(userLocation);
+            });
+        }
+    });
+
+    function changeRegion() {
+        const city = document.getElementById('city-select').value;
+        if (!city) return;
+
+        const geocoder = new kakao.maps.services.Geocoder();
+        geocoder.addressSearch('경기도 ' + city, function(result, status) {
+            if (status === kakao.maps.services.Status.OK) {
+                const moveLatLon = new kakao.maps.LatLng(result[0].y, result[0].x);
+                map.setCenter(moveLatLon);
+                if (currentCategoryCode) searchPlaces();
+            }
+        });
+    }
+
+    function changeCategory(code, btn, keyword = '') {
+        currentCategoryCode = code;
+        currentKeyword = keyword;
+        
+        const btns = document.querySelectorAll('.tab-btn');
+        btns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        searchPlaces();
+    }
+
+    function searchPlaces() {
+        if (!currentCategoryCode) return;
+        
+        removeMarkers();
+        removeOverlays();
+
+        const city = document.getElementById('city-select').value;
+        const searchOption = {
+            location: map.getCenter(),
+            radius: 5000 
+        };
+
+        if (currentKeyword) {
+            ps.keywordSearch('경기도 ' + city + " " + currentKeyword, searchCallback, searchOption);
+        } else {
+            ps.categorySearch(currentCategoryCode, searchCallback, searchOption);
+        }
+    }
+
+    function searchCallback(data, status) {
+        if (status === kakao.maps.services.Status.OK) {
+            displayResults(data);
+        } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+            alert('해당 지역에 결과가 없습니다.');
+        }
+    }
+
+    function displayResults(places) {
+        const listEl = document.getElementById('results-list');
+        const bounds = new kakao.maps.LatLngBounds();
+        listEl.innerHTML = '';
+
+        places.forEach(place => {
+            const position = new kakao.maps.LatLng(place.y, place.x);
+            const marker = addMarker(position, place);
+            bounds.extend(position);
+
+            const itemEl = document.createElement('li');
+            itemEl.className = 'item';
+            itemEl.innerHTML = `<strong>${place.place_name}</strong><small>${place.address_name}</small>`;
+            itemEl.onclick = () => {
+                map.panTo(position);
+                showOverlay(marker, place);
+            };
+            listEl.appendChild(itemEl);
+        });
+        map.setBounds(bounds);
+    }
+
+    function addMarker(position, place) {
+        let imgUrl = icons[currentCategoryCode];
+        if (currentKeyword === '영화관') imgUrl = icons.MOVIE;
+        if (currentKeyword === '문화시설') imgUrl = icons.CULTURE;
+
+        const markerImage = new kakao.maps.MarkerImage(imgUrl, new kakao.maps.Size(35, 35));
+        const marker = new kakao.maps.Marker({
+            map: map,
+            position: position,
+            image: markerImage
+        });
+
+        kakao.maps.event.addListener(marker, 'click', () => showOverlay(marker, place));
+        markers.push(marker);
+        return marker;
+    }
+
+    function showOverlay(marker, place) {
+        removeOverlays();
+
+        let routeUrl = `https://map.kakao.com/link/to/${place.id}`;
+        if (userLocation) {
+            routeUrl = `https://map.kakao.com/link/from/내위치,${userLocation.getLat()},${userLocation.getLng()}/to/${place.place_name},${place.y},${place.x}`;
+        }
+
+        const content = `
+            <div class="custom-overlay">
+                <div class="overlay-content">
+                    <span class="close-btn" onclick="removeOverlays()">×</span>
+                    <span class="title">${place.place_name}</span>
+                    <div class="info">
+                        📞 ${place.phone || '번호 없음'}<br>
+                        📍 ${place.address_name}
+                        <a href="${routeUrl}" target="_blank">길찾기 (시간/경로 확인)</a>
+                    </div>
+                </div>
+            </div>`;
+
+        const overlay = new kakao.maps.CustomOverlay({
+            content: content,
+            map: map,
+            position: marker.getPosition()
+        });
+
+        overlays.push(overlay);
+    }
+
+    function removeMarkers() {
+        markers.forEach(m => m.setMap(null));
+        markers = [];
+    }
+
+    function removeOverlays() {
+        overlays.forEach(o => o.setMap(null));
+        overlays = [];
+    }
+</script>
+</body>
+</html>
