@@ -10,36 +10,38 @@
 
         #container { display: flex; width: 100%; height: 100vh; }
 
-        /* 왼쪽 사이드바 */
+        /* 사이드바 스타일 */
         #sidebar {
             width: 380px; height: 100%; padding: 0;
             background: #ffffff; border-right: 1px solid #ddd;
             display: flex; flex-direction: column; z-index: 2;
         }
 
-        /* 탭 메뉴 (3개 버튼으로 재구성) */
-        .tab-menu { display: flex; flex-wrap: wrap; background: #eee; }
+        /* 탭 메뉴: 도서관 제거 후 3개 버튼으로 균등 분할 */
+        .tab-menu { display: flex; background: #eee; border-bottom: 1px solid #ddd; }
         .tab-btn {
-            flex: 1; padding: 15px; border: 1px solid #ddd; cursor: pointer;
+            flex: 1; padding: 15px; border: none; cursor: pointer;
             background: #f8f8f8; font-weight: bold; transition: 0.3s; font-size: 14px;
+            border-right: 1px solid #ddd;
         }
-        .tab-btn.active { background: #fee500; border-bottom: 2px solid #000; }
+        .tab-btn:last-child { border-right: none; }
+        .tab-btn.active { background: #fee500; color: #000; box-shadow: inset 0 -2px 0 #000; }
 
-        /* 경기도 지역 선택기 */
+        /* 경기도 지역 선택 박스 */
         .region-selector { padding: 15px; background: #f1f1f1; border-bottom: 1px solid #ddd; }
         #city-select { width: 100%; padding: 10px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
 
         /* 지도 영역 */
         #map { flex: 1; height: 100%; z-index: 1; }
 
-        /* 검색 결과 리스트 */
+        /* 결과 리스트 스타일 */
         #results-list { list-style: none; overflow-y: auto; flex: 1; }
         .item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; }
         .item:hover { background: #fff9c4; }
         .item strong { color: #333; display: block; margin-bottom: 5px; font-size: 16px; }
         .item small { color: #888; font-size: 12px; }
 
-        /* 커스텀 말풍선 (오버레이) */
+        /* 커스텀 오버레이(말풍선) 스타일 */
         .custom-overlay {
             position: relative; bottom: 100px; border-radius: 10px; border: 1px solid #ccc;
             background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.2); width: 220px;
@@ -83,121 +85,3 @@
         <ul id="results-list"></ul>
     </aside>
     <div id="map"></div>
-</div>
-
-<script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=778e014ba7e921c24f8abd37480e3c4f&libraries=services&autoload=false"></script>
-
-<script>
-    let map, ps;
-    let markers = [];
-    let overlays = [];
-    let currentCategoryCode = '';
-    let currentKeyword = '';
-    let userLocation = null;
-
-    // 아이콘 이미지 설정 (도서관 관련 삭제)
-    const icons = {
-        CE7: 'https://cdn-icons-png.flaticon.com/64/2682/2682413.png', // 케이크 (카페)
-        MOVIE: 'https://cdn-icons-png.flaticon.com/64/2503/2503508.png', // 팝콘 (영화관)
-        CULTURE: 'https://cdn-icons-png.flaticon.com/64/2589/2589175.png', // 하얀 하트 (문화시설)
-        USER: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png' // 내 위치 (빨간 핀)
-    };
-
-    kakao.maps.load(function() {
-        const container = document.getElementById('map');
-        const options = {
-            center: new kakao.maps.LatLng(37.2635, 127.0286), // 초기값: 경기도청
-            level: 5
-        };
-        map = new kakao.maps.Map(container, options);
-        ps = new kakao.maps.services.Places();
-
-        // 브라우저 Geolocation으로 내 현재 위치 파악
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(function(pos) {
-                userLocation = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
-                new kakao.maps.Marker({
-                    map: map,
-                    position: userLocation,
-                    image: new kakao.maps.MarkerImage(icons.USER, new kakao.maps.Size(24, 35))
-                });
-                map.setCenter(userLocation);
-            });
-        }
-    });
-
-    // 드롭다운에서 지역 변경 시 호출
-    function changeRegion() {
-        const city = document.getElementById('city-select').value;
-        if (!city) return;
-
-        const geocoder = new kakao.maps.services.Geocoder();
-        geocoder.addressSearch('경기도 ' + city, function(result, status) {
-            if (status === kakao.maps.services.Status.OK) {
-                const moveLatLon = new kakao.maps.LatLng(result[0].y, result[0].x);
-                map.setCenter(moveLatLon);
-                if (currentCategoryCode) searchPlaces(); // 카테고리가 선택되어 있다면 즉시 검색
-            }
-        });
-    }
-
-    // 상단 탭 클릭 시 호출
-    function changeCategory(code, btn, keyword = '') {
-        currentCategoryCode = code;
-        currentKeyword = keyword;
-        
-        const btns = document.querySelectorAll('.tab-btn');
-        btns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        searchPlaces();
-    }
-
-    // 실제 장소 검색 수행
-    function searchPlaces() {
-        if (!currentCategoryCode) return;
-        
-        removeMarkers();
-        removeOverlays();
-
-        const city = document.getElementById('city-select').value;
-        const searchOption = {
-            location: map.getCenter(),
-            radius: 5000 // 중심 좌표에서 5km 이내 검색
-        };
-
-        if (currentKeyword) {
-            // 영화관, 문화시설처럼 특정 키워드가 필요한 경우
-            ps.keywordSearch('경기도 ' + city + " " + currentKeyword, searchCallback, searchOption);
-        } else {
-            // 카페(CE7)처럼 카테고리 코드로 직접 검색하는 경우
-            ps.categorySearch(currentCategoryCode, searchCallback, searchOption);
-        }
-    }
-
-    function searchCallback(data, status) {
-        if (status === kakao.maps.services.Status.OK) {
-            displayResults(data);
-        } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
-            alert('결과가 없습니다. 다른 지역을 선택하거나 지도를 이동해보세요!');
-        }
-    }
-
-    function displayResults(places) {
-        const listEl = document.getElementById('results-list');
-        const bounds = new kakao.maps.LatLngBounds();
-        listEl.innerHTML = '';
-
-        places.forEach(place => {
-            const position = new kakao.maps.LatLng(place.y, place.x);
-            const marker = addMarker(position, place);
-            bounds.extend(position);
-
-            const itemEl = document.createElement('li');
-            itemEl.className = 'item';
-            itemEl.innerHTML = `<strong>${place.place_name}</strong><small>${place.address_name}</small>`;
-            itemEl.onclick = () => {
-                map.panTo(position);
-                showOverlay(marker, place);
-            };
-            listEl.appendChild(itemEl);
